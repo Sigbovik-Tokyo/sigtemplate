@@ -1,5 +1,5 @@
 from typing import Any
-
+from typing import Self
 
 class CodeBuilder():
     """Build source code."""
@@ -41,7 +41,7 @@ class CodeBuilder():
 
         self.indent_level -= self.INDENT_STEP
 
-    def add_section(self) -> CodeBuilder:
+    def add_section(self) -> Self:
         """Adds a sub-CodeBuilder.
 
         This may be to add text later on in the build process.
