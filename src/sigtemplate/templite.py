@@ -35,18 +35,32 @@ class Templite:
        self.loop_variables: set = set()
 
        # Call the code-builder to start our compiled funtion
-       code = CodeBuilder()
+       self.code = CodeBuilder()
 
-       code.add_line("def render_function(context, do_dots):")
-       code.indent()
-       code.add_line('"""Takes `context`, the data dictionary for rendering the template and `do_dots` enables the dot attribute access."""')
+       self.code.add_line("def render_function(context, do_dots):")
+       self.code.indent()
+       self.code.add_line('"""Takes `context`, the data dictionary for rendering the template and `do_dots` enables the dot attribute access."""')
        # add variables section
-       vars_code = code.add_section()
-       code.add_line("result: list = []")
+       vars_code = self.code.add_section()
+       self.code.add_line("result: list = []")
        # define shortcuts for list functions (for performance)
-       code.add_line("append_result = result.append")
-       code.add_line("extend_result = result.extend")
-       code.add_line("to_str = str")
+       self.code.add_line("append_result = result.append")
+       self.code.add_line("extend_result = result.extend")
+       self.code.add_line("to_str = str")
+
+       # now parse the text 
+       self.parse_text(text)
+
+       # Unpack all context variables into local ones
+       for var_name in self.all_vars - self.loop_vars:
+           vars_code.add_line("c_%s = context[%r]" % (var_name, var_name))
+
+       # End of function
+       self.code.add_line("return ''.join(result)")
+       self.code.dedent()
+
+       # obj to render the template
+       self._render_function = self.code.get_globals()['render_function']
 
 
    buffered: list = [] # holds strings that are to be written to our function source code 
@@ -56,12 +70,49 @@ class Templite:
 
        if (len(buffered) == 1):
            # then use append 
-           code.add_line("append_result(%s)" % buffered[0])
+           self.code.add_line("append_result(%s)" % buffered[0])
        elif (len(buffered) > 1):
            # use extend because more than 1
-           code.add_line("extend_result([%s])" % ", ".join(buffered))
+           self.code.add_line("extend_result([%s])" % ", ".join(buffered))
 
         del buffered[:] # clear buffer
+
+
+    def _expr_code(self, expr):
+        """Generate a Python expression for `expr`.
+
+        Input:
+            Our template expressions can be a single value:
+                {{user_name}}
+            or can be a complex sequence of attribute accesses and filters:
+                {{user.name.localized|upper|escape}}
+        
+        Args:
+            expr: str : a python expression of the form defined above.
+
+        Returns:
+            code: str : piece of formatted code after evaluating expressions
+        """
+        
+        # complex expression? pipes?
+        if ('|' in expr):
+            pipes: list[str] = expr.split('|') # split ever func after each |
+            code = self._expr_code(pipes[0])
+            
+            for function in pipes[1:]:
+                self._variable(function, self.all_variables)
+                code = "c_%s(%s)" % (func, code)
+        elif ('.' in expr):
+            # no pipe, so dots instead?
+            dots = expr.split(".")
+            code = self._expr_code(dots[0])
+            args = ', '.join(repr(d) for d in dots[1:])
+            code = "do_dots(%s, %s)" % (code, args)
+        else:
+            self._variable(expr, self.all_variables)
+            code = "c_%s" % expr
+
+        return code
         
 
     ops_stack: list = [] # stack of strings - operate and use as it were a stack
@@ -131,8 +182,8 @@ class Templite:
 
                       # start 'if' block
                       ops_stack.append("if")
-                      code.add_line("if %s:" % self._expr_code(words[1]))
-                      code.indent()
+                      self.code.add_line("if %s:" % self._expr_code(words[1]))
+                      self.code.indent()
                   elif (words[0] == "for"):
                       # loop? iterate over expressions
                       if (len(words) != 4 or 
@@ -141,17 +192,48 @@ class Templite:
                       # Start `for` code block
                       ops_stack.append("for")
                       self._variable(words[1], self.loop_variables) # _variable checks syntax and adds it to var sets: all_vars, loop_vars
-                      code.add_line(
-                          "for count_%s in %s:" % (
+                      self.code.add_line(
+                          "for c_%s in %s:" % (
                               words[1],
                               self._expr_code(words[3])
                           )
                       )
-                      code.indent()
+                      self.code.indent()
                   elif (words[0].startswith("end")):
                       # end an operation - pop ops_stack
                       if (len(words) != 1):
                           self._syntax_error("Unrecognized `end`:", token)
+                      end_tag: str = words[0][3:]
+                      
+                      if (not ops_stack or ops_stack == []):
+                          self._syntax_error("Too many ends:", token)
+                      
+                      start_tag: str = ops_stack.pop() # what was the last operation that was begun / started
+                      
+                      if (start_tag != end_tag):
+                          self._syntax_error("Mismatched end tag", end_tag, ". Matched with:", start_tag)
+
+                      # de-indent code
+                      self.code.dedent()
+                  else:
+                      # the tag is not: `if`, `for`, `end`
+                      self._syntax_error("Unkown tag:", token)
+            else:
+                # just content
+                ## need repr() because it supplies '' around, so it's  
+                ## append_result('literal_value')
+                ## and not
+                ## append_result(literal_value)
+                buffered.append(repr(token))
+
+        if (ops_stack or ops_stack != []):
+            self._syntax_error("Unmatched action tag:", ops_stack[-1])
+
+        flush_output()
+
+
+        
+
 
                     
 
