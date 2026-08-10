@@ -8,264 +8,269 @@ The dictionary of values are stored in the Templite object and are available whe
 
 """
 from utils import *
+import re
+
 
 class Templite:
-    """Templite is the template is the compilation and rendering engine of the Web Template engine"""
+	"""Templite is the template is the compilation and rendering engine of the Web Template engine"""
 
-   def __init__(
-       self, text, *contexts):
-       """Constructs a Templite with the given `text`.
+	def __init__(
+		self, text, *contexts):
+		"""Constructs a Templite with the given `text`.
 
-       `contexts` are dictionaries of values used for future renderings. They're available after compiling and are good for defining functions or constants we want to be available everywhere.
+		`contexts` are dictionaries of values used for future renderings. They're available after compiling and are good for defining functions or constants we want to be available everywhere.
 
-       Args:
-           text: str : Text to be used and rendered in the template
-           contexts: tuple : A dictionary of values that can be passed as data to be used for future rendering. 
+		Args:
+			text: str : Text to be used and rendered in the template
+			contexts: tuple : A dictionary of values that can be passed as data to be used for future rendering. 
 
-       Returns:
-           An instance of the Templite class.
-       """
+		Returns:
+			An instance of the Templite class.
+		"""
 
-       self.context: dict = {}
-       for context in contexts:
-           self.context.update(context)
-
-       
-       # Keep track of all variables in the code and the loop variables 
-       self.all_variables: set = set()
-       self.loop_variables: set = set()
-
-       # Call the code-builder to start our compiled funtion
-       self.code = CodeBuilder()
-
-       self.code.add_line("def render_function(context, do_dots):")
-       self.code.indent()
-       self.code.add_line('"""Takes `context`, the data dictionary for rendering the template and `do_dots` enables the dot attribute access."""')
-       # add variables section
-       vars_code = self.code.add_section()
-       self.code.add_line("result: list = []")
-       # define shortcuts for list functions (for performance)
-       self.code.add_line("append_result = result.append")
-       self.code.add_line("extend_result = result.extend")
-       self.code.add_line("to_str = str")
-
-       # now parse the text 
-       self.parse_text(text)
-
-       # Unpack all context variables into local ones
-       for var_name in self.all_vars - self.loop_vars:
-           vars_code.add_line("c_%s = context[%r]" % (var_name, var_name))
-
-       # End of function
-       self.code.add_line("return ''.join(result)")
-       self.code.dedent()
-
-       # obj to render the template
-       self._render_function = self.code.get_globals()['render_function']
+		self.context: dict = {}
+		for context in contexts:
+			self.context.update(context)
 
 
-   buffered: list = [] # holds strings that are to be written to our function source code 
-   def flush_output(
-       self):
-       """Force `buffered` output(s) to the code builder."""
+		# Keep track of all variables in the code and the loop variables 
+		self.all_variables: set = set()
+		self.loop_variables: set = set()
+		self.buffered: list = [] # holds strings that are to be written to our function source code 
+		self.ops_stack: list = [] # stack of strings - operate and use as it were a stack
 
-       if (len(buffered) == 1):
-           # then use append 
-           self.code.add_line("append_result(%s)" % buffered[0])
-       elif (len(buffered) > 1):
-           # use extend because more than 1
-           self.code.add_line("extend_result([%s])" % ", ".join(buffered))
+		# Call the code-builder to start our compiled funtion
+		self.code = CodeBuilder()
 
-        del buffered[:] # clear buffer
+		self.code.add_line("def render_function(context, do_dots):")
+		self.code.indent()
+		self.code.add_line('"""Takes `context`, the data dictionary for rendering the template and `do_dots` enables the dot attribute access."""')
+		# add variables section
+		vars_code = self.code.add_section()
+		self.code.add_line("result: list = []")
+		# define shortcuts for list functions (for performance)
+		self.code.add_line("append_result = result.append")
+		self.code.add_line("extend_result = result.extend")
+		self.code.add_line("to_str = str")
+
+		# now parse the text 
+		self.parse_text(text)
+
+		# Unpack all context variables into local ones
+		for var_name in self.all_vars - self.loop_vars:
+			vars_code.add_line("c_%s = context[%r]" % (var_name, var_name))
+
+		# End of function
+		self.code.add_line("return ''.join(result)")
+		self.code.dedent()
+
+		# obj to render the template
+		self._render_function = self.code.get_globals()['render_function']
 
 
-    def _expr_code(self, expr):
-        """Generate a Python expression for `expr`.
+	
+	def flush_output(
+		self):
+		"""Force `buffered` output(s) to the code builder."""
 
-        Input:
-            Our template expressions can be a single value:
-                {{user_name}}
-            or can be a complex sequence of attribute accesses and filters:
-                {{user.name.localized|upper|escape}}
+		if (len(self.buffered) == 1):
+			# then use append 
+			self.code.add_line("append_result(%s)" % self.buffered[0])
+		elif (len(self.buffered) > 1):
+			# use extend because more than 1
+			self.code.add_line("extend_result([%s])" % ", ".join(self.buffered))
+
+		del self.buffered[:] # clear buffer
+
+
+	def _expr_code(self, expr):
+		"""Generate a Python expression for `expr`.
+
+		Input:
+			Our template expressions can be a single value:
+				{{user_name}}
+			or can be a complex sequence of attribute accesses and filters:
+				{{user.name.localized|upper|escape}}
+
+		Args:
+			expr: str : a python expression of the form defined above.
+
+		Returns:
+			code: str : piece of formatted code after evaluating expressions
+		"""
+
+		# complex expression? pipes?
+		if ('|' in expr):
+			pipes: list[str] = expr.split('|') # split ever func after each |
+			code = self._expr_code(pipes[0])
+			
+			for function in pipes[1:]:
+				self._variable(function, self.all_variables)
+				code = "c_%s(%s)" % (func, code)
+		elif ('.' in expr):
+			# no pipe, so dots instead?
+			dots: list[str] = expr.split(".")
+			code: str = self._expr_code(dots[0])
+			args: str = ', '.join(repr(d) for d in dots[1:])
+			code: str = "do_dots(%s, %s)" % (code, args)
+		else:
+			self._variable(expr, self.all_variables)
+			code: str = "c_%s" % expr
+
+		return code
         
-        Args:
-            expr: str : a python expression of the form defined above.
 
-        Returns:
-            code: str : piece of formatted code after evaluating expressions
-        """
-        
-        # complex expression? pipes?
-        if ('|' in expr):
-            pipes: list[str] = expr.split('|') # split ever func after each |
-            code = self._expr_code(pipes[0])
-            
-            for function in pipes[1:]:
-                self._variable(function, self.all_variables)
-                code = "c_%s(%s)" % (func, code)
-        elif ('.' in expr):
-            # no pipe, so dots instead?
-            dots = expr.split(".")
-            code = self._expr_code(dots[0])
-            args = ', '.join(repr(d) for d in dots[1:])
-            code = "do_dots(%s, %s)" % (code, args)
-        else:
-            self._variable(expr, self.all_variables)
-            code = "c_%s" % expr
+    
+	def parse_tokens(
+		self, text):
+		"""Splits text into tokens and parses each individual token according to their requirements.
 
-        return code
-        
+		Regex Handling:
+			Uses regex to split `text` into tokens. 
 
-    ops_stack: list = [] # stack of strings - operate and use as it were a stack
-    def parse_tokens(
-        self, text):
-        """Splits text into tokens and parses each individual token according to their requirements.
+			Input: `<p>Topics for {{name}}: {% for t in topics %}{{t}}, {% endfor %}</p>`
 
-        Regex Handling:
-            Uses regex to split `text` into tokens. 
+			Output: 
+			```
+			[
+				'<p>Topics for ',               # literal
+				'{{name}}',                     # expression
+				': ',                           # literal
+				'{% for t in topics %}',        # tag
+				'',                             # literal (empty)
+				'{{t}}',                        # expression
+				', ',                           # literal
+				'{% endfor %}',                 # tag
+				'</p>'                          # literal
+			]
+			```
 
-            Input: `<p>Topics for {{name}}: {% for t in topics %}{{t}}, {% endfor %}</p>`
+		Args:
+			text: str : String text to parse and handle.
+		"""
 
-            Output: 
-            ```
-            [
-                '<p>Topics for ',               # literal
-                '{{name}}',                     # expression
-                ': ',                           # literal
-                '{% for t in topics %}',        # tag
-                '',                             # literal (empty)
-                '{{t}}',                        # expression
-                ', ',                           # literal
-                '{% endfor %}',                 # tag
-                '</p>'                          # literal
-            ]
-            ```
+		# Split `text` using Regex and return split list
+		## ?s : dot should match \n as well
+		## .*? : match any number of characters - but shortest sequence that matches
+		## {{.*?}} : match an expression, ex: <p> Count: {{count}} <p>
+		## {%.?%} : matches a tag
+		## {#.*?} : matches a comment
+		tokens: list[str] = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
 
-        Args:
-            text: str : String text to parse and handle.
-        """
+		token: str
+		for token in tokens:
+			if (token.startswith("{#")):
+				# Comment? ignore
+				continue
+			elif (token.startswith("{{")):
+				# Expression? oh no
+				## Remove starting {{ and ending }} and pass
+				expression = self._expre_code(token[2:-2].strip())
+				self.buffered.append("to_str(%s)", expression)
+			elif (token.startswith("{%)")):
+					# Action tag? Split into words and parse again
+					self.flush_output()
 
-        # Split `text` using Regex and return split list
-        ## ?s : dot should match \n as well
-        ## .*? : match any number of characters - but shortest sequence that matches
-        ## {{.*?}} : match an expression, ex: <p> Count: {{count}} <p>
-        ## {%.?%} : matches a tag
-        ## {#.*?} : matches a comment
-        tokens: list[str] = re.split(r"(?s)({{.*?}}|{%.*?%}|{#.*?#})", text)
+					## Again, remove {{ and }}
+					words: list[str] = token[2:-2].strip().split(' ') 
 
-        token: str
-        for token in tokens:
-            if (token.startswith("{#")):
-                # Comment? ignore
-                continue
-            elif (token.startswith("{{")):
-                # Expression? oh no
-                ## Remove starting {{ and ending }} and pass
-                expression = self._expre_code(token[2:-2].strip())
-                buffered.append("to_str(%s)", expression)
-            elif (token.startswith("{%)"):
-                  # Action tag? Split into words and parse again
-                  self.flush_output()
+					## 3 Possible Cases:
+					### if - simple error handling
+					### for - multiple expressions
+					### end - unindent to define end of if block
+					
+					if (words[0] == "if"):
+						# evaluate the expression in if
+						if (len(words) != 2):
+							# can't have complex expressions
+							self._syntax_error("Unrecognized 'if':", token)
 
-                  ## Again, remove {{ and }}
-                  words: list[str] = token[2:-2].strip().split(' ') 
+						# start 'if' block
+						self.ops_stack.append("if")
+						self.code.add_line("if %s:" % self._expr_code(words[1]))
+						self.code.indent()
+					elif (words[0] == "for"):
+						# loop? iterate over expressions
+						if (len(words) != 4 or 
+							words[2] != "in"):
+							self._syntax_error("Unrecognized 'for':", token)
+						# Start `for` code block
+						self.ops_stack.append("for")
+						self._variable(words[1], self.loop_variables) # _variable checks syntax and adds it to var sets: all_vars, loop_vars
+						self.code.add_line(
+							"for c_%s in %s:" % (
+								words[1],
+								self._expr_code(words[3])
+							)
+						)
+						self.code.indent()
+					elif (words[0].startswith("end")):
+						# end an operation - pop ops_stack
+						if (len(words) != 1):
+							self._syntax_error("Unrecognized `end`:", token)
+						end_tag: str = words[0][3:]
+						
+						if (not self.ops_stack or self.ops_stack == []):
+							self._syntax_error("Too many ends:", token)
+						
+						start_tag: str = self.ops_stack.pop() # what was the last operation that was begun / started
+						
+						if (start_tag != end_tag):
+							self._syntax_error("Mismatched end tag", end_tag, ". Matched with:", start_tag)
 
-                  ## 3 Possible Cases:
-                  ### if - simple error handling
-                  ### for - multiple expressions
-                  ### end - unindent to define end of if block
-                  
-                  if (words[0] == "if"):
-                      # evaluate the expression in if
-                      if (len(words) != 2):
-                          # can't have complex expressions
-                          self._syntax_error("Unrecognized 'if':", token)
+						# de-indent code
+						self.code.dedent()
+					else:
+						# the tag is not: `if`, `for`, `end`
+						self._syntax_error("Unkown tag:", token)
+			else:
+				# just content
+				## need repr() because it supplies '' around, so it's  
+				## append_result('literal_value')
+				## and not
+				## append_result(literal_value)
+				self.buffered.append(repr(token))
 
-                      # start 'if' block
-                      ops_stack.append("if")
-                      self.code.add_line("if %s:" % self._expr_code(words[1]))
-                      self.code.indent()
-                  elif (words[0] == "for"):
-                      # loop? iterate over expressions
-                      if (len(words) != 4 or 
-                          words[2] != "in"):
-                          self._syntax_error("Unrecognized 'for':", token)
-                      # Start `for` code block
-                      ops_stack.append("for")
-                      self._variable(words[1], self.loop_variables) # _variable checks syntax and adds it to var sets: all_vars, loop_vars
-                      self.code.add_line(
-                          "for c_%s in %s:" % (
-                              words[1],
-                              self._expr_code(words[3])
-                          )
-                      )
-                      self.code.indent()
-                  elif (words[0].startswith("end")):
-                      # end an operation - pop ops_stack
-                      if (len(words) != 1):
-                          self._syntax_error("Unrecognized `end`:", token)
-                      end_tag: str = words[0][3:]
-                      
-                      if (not ops_stack or ops_stack == []):
-                          self._syntax_error("Too many ends:", token)
-                      
-                      start_tag: str = ops_stack.pop() # what was the last operation that was begun / started
-                      
-                      if (start_tag != end_tag):
-                          self._syntax_error("Mismatched end tag", end_tag, ". Matched with:", start_tag)
+		if (self.ops_stack or self.ops_stack != []):
+			self._syntax_error("Unmatched action tag:", self.ops_stack[-1])
 
-                      # de-indent code
-                      self.code.dedent()
-                  else:
-                      # the tag is not: `if`, `for`, `end`
-                      self._syntax_error("Unkown tag:", token)
-            else:
-                # just content
-                ## need repr() because it supplies '' around, so it's  
-                ## append_result('literal_value')
-                ## and not
-                ## append_result(literal_value)
-                buffered.append(repr(token))
-
-        if (ops_stack or ops_stack != []):
-            self._syntax_error("Unmatched action tag:", ops_stack[-1])
-
-        flush_output()
+		flush_output()
 
 
-    def render(
-        self, context=None):
-        """Render this template by applying it to `context`.
+	def render(
+		self, context=None):
+		"""Render this template by applying it to `context`.
 
-        Args:
-            context: dict : is a dictionary of values to use in this rendering.
+		Args:
+			context: dict : is a dictionary of values to use in this rendering.
 
-        """
-        # Make the complete context we'll use.
-        render_context: dict = dict(self.context)
-        if (context):
-            render_context.update(context)
+		"""
+		# Make the complete context we'll use.
+		render_context: dict = dict(self.context)
+		if (context):
+			render_context.update(context)
 
-        return self._render_function(render_context, self._do_dots)
+		return self._render_function(render_context, self._do_dots)
 
 
-    def _do_dots(self, value, *dots):
-        """Evaluate dotted expressions at runtime.
+	def _do_dots(
+		self, value, *dots):
+		"""Evaluate dotted expressions at runtime.
 
-        Args:
-            value : value in the dots dictionary  
-            *dots: tuple : tuple of multiple values that are references separated by dots, example: `obj.item.value`. 
-        """
+		Args:
+			value : value in the dots dictionary  
+			*dots: tuple : tuple of multiple values that are references separated by dots, example: `obj.item.value`. 
+		"""
 
-        for (dot in dots):
-            try:
-                value = getattr(value, dot)
-            except AttributeError:
-                value = value[dot]
+		for dot in dots:
+			try:
+				value = getattr(value, dot)
+			except AttributeError:
+				value = value[dot]
 
-            if (callable(value)):
-                value = value()
+			if (callable(value)):
+				value = value()
 
-        return value
-        
+		return value
+
 
