@@ -7,6 +7,7 @@ The templite class accepts text and data as a dictionary of values. Call the com
 The dictionary of values are stored in the Templite object and are available when the template is later rendered. 
 
 """
+from codebuilder import CodeBuilder
 from utils import *
 import re
 
