@@ -10,7 +10,6 @@ The dictionary of values are stored in the Templite object and are available whe
 from utils import *
 import re
 
-
 class Templite:
 	"""Templite is the template is the compilation and rendering engine of the Web Template engine"""
 
@@ -67,7 +66,6 @@ class Templite:
 		# obj to render the template
 		self._render_function = self.code.get_globals()['render_function']
 
-
 	
 	def flush_output(
 		self):
@@ -106,7 +104,7 @@ class Templite:
 			
 			for function in pipes[1:]:
 				self._variable(function, self.all_variables)
-				code = "c_%s(%s)" % (func, code)
+				code = "c_%s(%s)" % (function, code)
 		elif ('.' in expr):
 			# no pipe, so dots instead?
 			dots: list[str] = expr.split(".")
@@ -118,7 +116,6 @@ class Templite:
 			code: str = "c_%s" % expr
 
 		return code
-        
 
     
 	def parse_tokens(
@@ -234,7 +231,7 @@ class Templite:
 		if (self.ops_stack or self.ops_stack != []):
 			self._syntax_error("Unmatched action tag:", self.ops_stack[-1])
 
-		flush_output()
+		self.flush_output()
 
 
 	def render(

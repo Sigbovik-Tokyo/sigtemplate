@@ -4,6 +4,12 @@ Utility functions to make life easier.
 
 """
 
+import re
+
+class TempliteSyntaxError(Exception):
+    """Raised when a syntax error within the templater engine occurs."""
+    pass
+
 def _syntax_error(
     self, msg, thing):
     """Raise a syntax error using `msg`, and showing `thing`."""
