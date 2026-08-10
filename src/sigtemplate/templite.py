@@ -7,6 +7,7 @@ The templite class accepts text and data as a dictionary of values. Call the com
 The dictionary of values are stored in the Templite object and are available when the template is later rendered. 
 
 """
+from utils import *
 
 class Templite:
     """Templite is the template is the compilation and rendering engine of the Web Template engine"""
@@ -232,22 +233,39 @@ class Templite:
         flush_output()
 
 
+    def render(
+        self, context=None):
+        """Render this template by applying it to `context`.
+
+        Args:
+            context: dict : is a dictionary of values to use in this rendering.
+
+        """
+        # Make the complete context we'll use.
+        render_context: dict = dict(self.context)
+        if (context):
+            render_context.update(context)
+
+        return self._render_function(render_context, self._do_dots)
+
+
+    def _do_dots(self, value, *dots):
+        """Evaluate dotted expressions at runtime.
+
+        Args:
+            value : value in the dots dictionary  
+            *dots: tuple : tuple of multiple values that are references separated by dots, example: `obj.item.value`. 
+        """
+
+        for (dot in dots):
+            try:
+                value = getattr(value, dot)
+            except AttributeError:
+                value = value[dot]
+
+            if (callable(value)):
+                value = value()
+
+        return value
         
-
-
-                    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
