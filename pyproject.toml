@@ -1,6 +1,6 @@
 [project]
 name = "sigtemplate"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Ankhbold Batbaatar", email="ankhasgreens@gmail.com" },
   { name="Bhushith Gujjala Hari", email="haribhushith9999@gmail.com" },
