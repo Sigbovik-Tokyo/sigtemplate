@@ -7,8 +7,8 @@ The templite class accepts text and data as a dictionary of values. Call the com
 The dictionary of values are stored in the Templite object and are available when the template is later rendered. 
 
 """
-from codebuilder import CodeBuilder
-from utils import *
+from sigtemplate.codebuilder import CodeBuilder
+from sigtemplate.utils import *
 import re
 
 class Templite:
@@ -57,7 +57,7 @@ class Templite:
 		self.parse_tokens(text)
 
 		# Unpack all context variables into local ones
-		for var_name in self.all_vars - self.loop_vars:
+		for var_name in self.all_variables - self.loop_variables:
 			vars_code.add_line("c_%s = context[%r]" % (var_name, var_name))
 
 		# End of function
@@ -104,7 +104,7 @@ class Templite:
 			code = self._expr_code(pipes[0])
 			
 			for function in pipes[1:]:
-				self._variable(function, self.all_variables)
+				_variable(function, self.all_variables)
 				code = "c_%s(%s)" % (function, code)
 		elif ('.' in expr):
 			# no pipe, so dots instead?
@@ -113,7 +113,7 @@ class Templite:
 			args: str = ', '.join(repr(d) for d in dots[1:])
 			code: str = "do_dots(%s, %s)" % (code, args)
 		else:
-			self._variable(expr, self.all_variables)
+			_variable(expr, self.all_variables)
 			code: str = "c_%s" % expr
 
 		return code
@@ -163,8 +163,8 @@ class Templite:
 			elif (token.startswith("{{")):
 				# Expression? oh no
 				## Remove starting {{ and ending }} and pass
-				expression = self._expre_code(token[2:-2].strip())
-				self.buffered.append("to_str(%s)", expression)
+				expression = self._expr_code(token[2:-2].strip())
+				self.buffered.append("to_str(%s)" % expression)
 			elif (token.startswith("{%)")):
 					# Action tag? Split into words and parse again
 					self.flush_output()
@@ -194,7 +194,7 @@ class Templite:
 							self._syntax_error("Unrecognized 'for':", token)
 						# Start `for` code block
 						self.ops_stack.append("for")
-						self._variable(words[1], self.loop_variables) # _variable checks syntax and adds it to var sets: all_vars, loop_vars
+						_variable(words[1], self.loop_variables) # _variable checks syntax and adds it to var sets: all_vars, loop_vars
 						self.code.add_line(
 							"for c_%s in %s:" % (
 								words[1],
