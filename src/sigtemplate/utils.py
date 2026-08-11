@@ -5,10 +5,10 @@ Utility functions to make life easier.
 """
 
 import re
+from sigtemplate.errors import TempliteSyntaxError
 
 def _syntax_error(msg, thing):
     """Raise a syntax error using `msg`, and showing `thing`."""
-    from sigtemplate.templite import TempliteSyntaxError
     raise TempliteSyntaxError("%s: %r" % (msg, thing))
 
 

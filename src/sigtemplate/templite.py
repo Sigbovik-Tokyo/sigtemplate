@@ -11,16 +11,6 @@ from sigtemplate.codebuilder import CodeBuilder
 from sigtemplate.utils import _variable, _syntax_error 
 import re
 
-class TempliteSyntaxError(Exception):
-    """Raised when a syntax error within the templater engine occurs."""
-    pass
-
-
-class TempliteValueError(ValueError):
-    """Raised when an expression won't evaluate in a template."""
-    pass
-
-
 class Templite:
 	"""Templite is the template is the compilation and rendering engine of the Web Template engine"""
 
