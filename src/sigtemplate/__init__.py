@@ -1,2 +1,2 @@
-import sigtemplate.template
+import sigtemplate.templite
 import sigtemplate.codebuilder
