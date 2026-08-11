@@ -10,8 +10,7 @@ Testing code taken from: https://github.com/nedbat/templite.git
 import re
 import unittest
 
-from sigtemplate.templite import Templite, TempliteSyntaxError
-from sigtemplate.utils import TempliteValueError
+from sigtemplate.templite import Templite, TempliteValueError, TempliteSyntaxError
 
 # pylint: disable=unused-variable
 

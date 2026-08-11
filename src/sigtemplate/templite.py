@@ -8,8 +8,18 @@ The dictionary of values are stored in the Templite object and are available whe
 
 """
 from sigtemplate.codebuilder import CodeBuilder
-from sigtemplate.utils import *
+from sigtemplate.utils import _variable, _syntax_error 
 import re
+
+class TempliteSyntaxError(Exception):
+    """Raised when a syntax error within the templater engine occurs."""
+    pass
+
+
+class TempliteValueError(ValueError):
+    """Raised when an expression won't evaluate in a template."""
+    pass
+
 
 class Templite:
 	"""Templite is the template is the compilation and rendering engine of the Web Template engine"""
@@ -181,7 +191,7 @@ class Templite:
 						# evaluate the expression in if
 						if (len(words) != 2):
 							# can't have complex expressions
-							self._syntax_error("Unrecognized 'if':", token)
+							_syntax_error("Unrecognized 'if':", token)
 
 						# start 'if' block
 						self.ops_stack.append("if")
@@ -191,7 +201,7 @@ class Templite:
 						# loop? iterate over expressions
 						if (len(words) != 4 or 
 							words[2] != "in"):
-							self._syntax_error("Unrecognized 'for':", token)
+							_syntax_error("Unrecognized 'for':", token)
 						# Start `for` code block
 						self.ops_stack.append("for")
 						_variable(words[1], self.loop_variables) # _variable checks syntax and adds it to var sets: all_vars, loop_vars
@@ -205,22 +215,22 @@ class Templite:
 					elif (words[0].startswith("end")):
 						# end an operation - pop ops_stack
 						if (len(words) != 1):
-							self._syntax_error("Unrecognized `end`:", token)
+							_syntax_error("Unrecognized `end`:", token)
 						end_tag: str = words[0][3:]
 						
 						if (not self.ops_stack or self.ops_stack == []):
-							self._syntax_error("Too many ends:", token)
+							_syntax_error("Too many ends:", token)
 						
 						start_tag: str = self.ops_stack.pop() # what was the last operation that was begun / started
 						
 						if (start_tag != end_tag):
-							self._syntax_error("Mismatched end tag", end_tag, ". Matched with:", start_tag)
+							_syntax_error("Mismatched end tag", end_tag, ". Matched with:", start_tag)
 
 						# de-indent code
 						self.code.dedent()
 					else:
 						# the tag is not: `if`, `for`, `end`
-						self._syntax_error("Unkown tag:", token)
+						_syntax_error("Unkown tag:", token)
 			else:
 				# just content
 				## need repr() because it supplies '' around, so it's  
@@ -230,7 +240,7 @@ class Templite:
 				self.buffered.append(repr(token))
 
 		if (self.ops_stack or self.ops_stack != []):
-			self._syntax_error("Unmatched action tag:", self.ops_stack[-1])
+			_syntax_error("Unmatched action tag:", self.ops_stack[-1])
 
 		self.flush_output()
 
