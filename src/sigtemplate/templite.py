@@ -54,7 +54,7 @@ class Templite:
 		self.code.add_line("to_str = str")
 
 		# now parse the text 
-		self.parse_text(text)
+		self.parse_tokens(text)
 
 		# Unpack all context variables into local ones
 		for var_name in self.all_vars - self.loop_vars:
