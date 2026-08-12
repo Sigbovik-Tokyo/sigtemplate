@@ -165,7 +165,7 @@ class Templite:
 				## Remove starting {{ and ending }} and pass
 				expression = self._expr_code(token[2:-2].strip())
 				self.buffered.append("to_str(%s)" % expression)
-			elif (token.startswith("{%)")):
+			elif (token.startswith("{%")):
 					# Action tag? Split into words and parse again
 					self.flush_output()
 
